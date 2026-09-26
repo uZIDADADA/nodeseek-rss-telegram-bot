@@ -10,7 +10,7 @@ def build_main_menu() -> ReplyKeyboardMarkup:
         [
             [KeyboardButton("新建关键词"), KeyboardButton("我的关键词")],
             [KeyboardButton("版块设置"), KeyboardButton("推送历史")],
-            [KeyboardButton("添加当前聊天"), KeyboardButton("帮助")],
+            [KeyboardButton("帮助")],
         ],
         resize_keyboard=True,
     )
@@ -36,4 +36,3 @@ def build_category_keyboard(selected: set[str]) -> InlineKeyboardMarkup:
         ]
     )
     return InlineKeyboardMarkup(rows)
-

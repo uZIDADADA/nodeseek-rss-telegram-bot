@@ -768,9 +768,6 @@ class BotHandlers:
         if text == "推送历史":
             await self.history(update, context)
             return
-        if text == "添加当前聊天":
-            await self.addtarget(update, context)
-            return
         if text == "帮助":
             await self.help(update, context)
             return
