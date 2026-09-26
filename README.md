@@ -1,6 +1,6 @@
 # NodeSeek 关键词监控 Bot
 
-监控 NodeSeek 关键词，命中新帖后自动推送到 Telegram。支持多用户共享、自部署、组合关键词、屏蔽词、版块多选、推送历史和去重推送。
+监控 NodeSeek 关键词，命中新帖后自动推送到 Telegram。支持单用户自部署、组合关键词、屏蔽词、版块多选、推送历史和去重推送。
 
 ## 功能介绍
 
@@ -11,7 +11,7 @@
 - 支持多目标推送配置，用户+社群最多10个；
 - 支持推送历史
 - 去重推送，重启后状态不丢失
-- 多用户共享
+- 仅允许配置的一个 Telegram 用户操作
 - 默认 10 秒轮询一次 RSS，可在 `.env` 调整
 
 常用命令：
@@ -40,9 +40,9 @@
 - 群组里可直接发送 `/addtarget`
 - 频道可在私聊里发送 `/addtarget <chat_id>` 进行绑定
 - 群组或频道都要求操作者是管理员
-- 如启用 `ALLOWED_USER_IDS`，只有白名单用户可以使用 Bot
+- 必须在 `ALLOWED_USER_IDS` 填写一个 Telegram 数字用户 ID，只有这个用户可以操作 Bot；留空时 Bot 拒绝启动
 
-## 可以先订阅我的机器人试试
+## 原项目的公开体验 Bot
 
 https://t.me/NodeSeekKey_bot
 
@@ -80,12 +80,12 @@ cp .env.example .env
 nano .env
 ```
 
-把 `.env` 里的 `BOT_TOKEN` 改成你自己的 Token。
+把 `.env` 里的 `BOT_TOKEN` 改成你自己的 Token，并填写你自己的 Telegram 数字用户 ID。可以在 Telegram 中向 `@userinfobot` 发送消息查看用户 ID；这里不要填群组或频道的 chat ID。
 
-如需启用白名单模式，可以额外配置：
+`ALLOWED_USER_IDS` 必须且只能填写一个用户 ID：
 
 ```text
-ALLOWED_USER_IDS=<用户ID1>,<用户ID2>
+ALLOWED_USER_IDS=<你的 Telegram 数字用户 ID>
 ```
 
 ### 5. 启动 Bot

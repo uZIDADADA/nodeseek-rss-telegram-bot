@@ -1,6 +1,6 @@
 # NodeSeek Keyword Monitor Bot
 
-Monitor NodeSeek keywords and push matched new posts to Telegram. Supports multi-user shared deployment, keyword combinations, block keywords, multi-category filtering, delivery history, and deduplicated notifications.
+Monitor NodeSeek keywords and push matched new posts to Telegram. Supports single-user self-hosting, keyword combinations, block keywords, multi-category filtering, delivery history, and deduplicated notifications.
 
 ## Features
 
@@ -11,7 +11,7 @@ Monitor NodeSeek keywords and push matched new posts to Telegram. Supports multi
 - Multiple delivery targets, up to 10 in total across user chats and communities
 - Delivery history
 - Deduplicated notifications with persisted state
-- Multi-user shared deployment
+- Only the configured Telegram user can control the bot
 - Polls RSS every 10 seconds by default, configurable in `.env`
 
 Common commands:
@@ -40,9 +40,9 @@ Notes:
 - In groups, you can run `/addtarget` directly
 - For channels, use `/addtarget <chat_id>` in private chat
 - The operator must be an admin of the target group or channel
-- If `ALLOWED_USER_IDS` is enabled, only allowlisted users can use the bot
+- Set `ALLOWED_USER_IDS` to one numeric Telegram user ID; only that user can control the bot, and the bot refuses to start if it is unset
 
-## Try My Bot First
+## Original Project's Public Demo Bot
 
 [https://t.me/NodeSeekKey_bot](https://t.me/NodeSeekKey_bot)
 
@@ -79,12 +79,12 @@ cp .env.example .env
 nano .env
 ```
 
-Replace `BOT_TOKEN` in `.env` with your own token.
+Replace `BOT_TOKEN` in `.env` with your own token and set your numeric Telegram user ID. You can get your user ID by messaging `@userinfobot` on Telegram. Do not use a group or channel chat ID here.
 
-If you want allowlist mode, you can also add:
+`ALLOWED_USER_IDS` is required and must contain exactly one user ID:
 
 ```text
-ALLOWED_USER_IDS=<user_id_1>,<user_id_2>
+ALLOWED_USER_IDS=<your_numeric_telegram_user_id>
 ```
 
 ### 5. Start the Bot

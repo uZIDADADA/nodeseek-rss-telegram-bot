@@ -55,9 +55,9 @@ daily, tech, info, review, trade, carpool, promo, life, dev, photo-share, expose
 说明：
 1. 普通关键词命中任意一个就提醒，组合规则需要所有词同时命中。
 2. 默认第一次使用会跳过旧帖，只从后续新帖开始通知。
-3. 默认会把你第一次对话的当前聊天加入推送目标。
+3. 首次私聊会自动加入私聊推送目标；群组和频道需由管理员执行 /addtarget。
 4. 每个用户最多可配置多个推送目标，默认上限是 10 个。
-5. 如启用白名单，只有服务端配置过的用户才能使用。
+5. 只有服务端配置的唯一用户才能操作 Bot。
 """.strip()
 
 
@@ -224,7 +224,7 @@ class BotHandlers:
     async def ensure_user(self, update: Update) -> UserRecord | None:
         if not update.effective_user or not update.effective_chat:
             raise RuntimeError("当前更新没有用户信息")
-        if self.settings.allowed_user_ids and update.effective_user.id not in self.settings.allowed_user_ids:
+        if update.effective_user.id not in self.settings.allowed_user_ids:
             if update.effective_message:
                 await update.effective_message.reply_text("这个 Bot 当前未开放给你使用。")
             return None

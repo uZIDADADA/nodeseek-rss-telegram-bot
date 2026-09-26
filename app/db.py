@@ -366,7 +366,7 @@ class Database:
     ) -> UserRecord:
         user = await self.upsert_user(tg_user_id, chat_id, username, first_name)
         await self.ensure_user_settings(user.id)
-        if await self.count_targets_by_user_id(user.id) == 0:
+        if chat_type == "private" and await self.count_targets_by_user_id(user.id) == 0:
             await self.add_target(
                 user.id,
                 chat_id,

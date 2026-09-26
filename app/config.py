@@ -52,6 +52,15 @@ class Settings:
         database_path = Path(os.getenv("DATABASE_PATH", "data/bot.db"))
         database_path.parent.mkdir(parents=True, exist_ok=True)
 
+        try:
+            allowed_user_ids = _parse_id_list(
+                os.getenv("ALLOWED_USER_IDS", os.getenv("BOT_OWNER_IDS"))
+            )
+        except ValueError as exc:
+            raise RuntimeError("ALLOWED_USER_IDS 必须填写一个 Telegram 数字用户 ID。") from exc
+        if len(allowed_user_ids) != 1 or allowed_user_ids[0] <= 0:
+            raise RuntimeError("ALLOWED_USER_IDS 必须填写且只能填写一个 Telegram 数字用户 ID。")
+
         return cls(
             bot_token=bot_token,
             database_path=database_path,
@@ -70,7 +79,5 @@ class Settings:
             mark_as_read_on_first_poll=_parse_bool(os.getenv("MARK_AS_READ_ON_FIRST_POLL"), True),
             disable_web_page_preview=_parse_bool(os.getenv("DISABLE_WEB_PAGE_PREVIEW"), False),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
-            allowed_user_ids=_parse_id_list(
-                os.getenv("ALLOWED_USER_IDS", os.getenv("BOT_OWNER_IDS"))
-            ),
+            allowed_user_ids=allowed_user_ids,
         )
