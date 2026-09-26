@@ -29,6 +29,8 @@ Common commands:
 - `/pause`: pause notifications
 - `/resume`: resume notifications
 
+The "Delete keyword" menu button lists current keywords and IDs. Send an ID to delete that rule, or send "取消" to cancel.
+
 Notes:
 
 - Your first private message enables private notifications automatically; old group and channel targets stop receiving notifications after upgrading

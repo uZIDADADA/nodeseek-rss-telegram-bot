@@ -131,6 +131,7 @@ class BotHandlers:
         if await self.ensure_user(update) is None:
             return
         context.user_data.pop("awaiting_keyword", None)
+        context.user_data.pop("awaiting_delete_keyword", None)
         await update.effective_message.reply_text(
             MAIN_MENU_TEXT,
             reply_markup=build_main_menu(),
@@ -317,11 +318,25 @@ class BotHandlers:
         if not update.effective_message or not update.effective_user:
             return
         payload = update.effective_message.text.partition(" ")[2].strip()
-        if not payload or not payload.isdigit():
+        if not payload or not payload.isdecimal():
             await update.effective_message.reply_text("请用：/del <关键词ID>\n例如：/del 1")
             return
         deleted = await self.db.delete_keyword(update.effective_user.id, int(payload))
+        context.user_data.pop("awaiting_delete_keyword", None)
         await update.effective_message.reply_text("已删除。" if deleted else "没有找到这个关键词 ID。")
+
+    async def _prompt_delete_keyword(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        keywords = await self.db.list_keywords_by_tg_user(update.effective_user.id)
+        if not keywords:
+            context.user_data.pop("awaiting_delete_keyword", None)
+            await update.effective_message.reply_text("你还没有关键词。")
+            return
+
+        context.user_data["awaiting_delete_keyword"] = True
+        lines = ["要删除哪个关键词？请发送对应的 ID："]
+        lines.extend(f"{keyword.id}. {keyword.keyword}" for keyword in keywords)
+        lines.append("发送“取消”可返回主菜单。")
+        await _reply_chunked(update.effective_message, "\n".join(lines))
 
     async def scope(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if await self.ensure_user(update) is None:
@@ -496,22 +511,51 @@ class BotHandlers:
 
         text = (update.effective_message.text or "").strip()
         if text == "新建关键词":
+            context.user_data.pop("awaiting_delete_keyword", None)
             context.user_data["awaiting_keyword"] = True
             await update.effective_message.reply_text(
                 "请输入关键词，多个关键词可用英文逗号分开。\n例如：oracle,免费鸡,megabox"
             )
             return
+        if text == "删除关键词":
+            context.user_data.pop("awaiting_keyword", None)
+            await self._prompt_delete_keyword(update, context)
+            return
         if text == "我的关键词":
+            context.user_data.pop("awaiting_keyword", None)
+            context.user_data.pop("awaiting_delete_keyword", None)
             await self.keywords(update, context)
             return
         if text == "版块设置":
+            context.user_data.pop("awaiting_keyword", None)
+            context.user_data.pop("awaiting_delete_keyword", None)
             await self._send_scope_selector(update.effective_message, update.effective_user.id)
             return
         if text == "推送历史":
+            context.user_data.pop("awaiting_keyword", None)
+            context.user_data.pop("awaiting_delete_keyword", None)
             await self.history(update, context)
             return
         if text == "帮助":
+            context.user_data.pop("awaiting_keyword", None)
+            context.user_data.pop("awaiting_delete_keyword", None)
             await self.help(update, context)
+            return
+
+        if context.user_data.get("awaiting_delete_keyword"):
+            if text == "取消":
+                context.user_data.pop("awaiting_delete_keyword", None)
+                await update.effective_message.reply_text("已取消删除。")
+                return
+            if not text.isdecimal():
+                await update.effective_message.reply_text("请输入关键词列表中的数字 ID，或发送“取消”。")
+                return
+            deleted = await self.db.delete_keyword(update.effective_user.id, int(text))
+            if deleted:
+                context.user_data.pop("awaiting_delete_keyword", None)
+                await update.effective_message.reply_text("已删除。")
+            else:
+                await update.effective_message.reply_text("没有找到这个关键词 ID，请重新输入或发送“取消”。")
             return
 
         if context.user_data.get("awaiting_keyword"):

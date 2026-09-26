@@ -10,7 +10,7 @@ def build_main_menu() -> ReplyKeyboardMarkup:
         [
             [KeyboardButton("新建关键词"), KeyboardButton("我的关键词")],
             [KeyboardButton("版块设置"), KeyboardButton("推送历史")],
-            [KeyboardButton("帮助")],
+            [KeyboardButton("删除关键词"), KeyboardButton("帮助")],
         ],
         resize_keyboard=True,
     )
