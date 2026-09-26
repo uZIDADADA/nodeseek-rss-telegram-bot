@@ -441,20 +441,6 @@ class Database:
             await db.commit()
             return cursor.rowcount > 0
 
-    async def count_keywords_by_tg_user(self, tg_user_id: int) -> int:
-        async with self._connect() as db:
-            cursor = await db.execute(
-                """
-                SELECT COUNT(*)
-                FROM keywords k
-                JOIN users u ON u.id = k.user_id
-                WHERE u.tg_user_id = ?
-                """,
-                (tg_user_id,),
-            )
-            row = await cursor.fetchone()
-        return int(row[0]) if row else 0
-
     async def add_keyword(
         self,
         tg_user_id: int,
@@ -533,20 +519,6 @@ class Database:
             )
             rows = await cursor.fetchall()
         return [KeywordRecord(*row) for row in rows]
-
-    async def set_keyword_enabled(self, tg_user_id: int, keyword_id: int, enabled: bool) -> bool:
-        async with self._connect() as db:
-            cursor = await db.execute(
-                """
-                UPDATE keywords
-                SET enabled = ?, updated_at = ?
-                WHERE id = ?
-                  AND user_id = (SELECT id FROM users WHERE tg_user_id = ?)
-                """,
-                (1 if enabled else 0, utc_now_iso(), keyword_id, tg_user_id),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
 
     async def delete_keyword(self, tg_user_id: int, keyword_id: int) -> bool:
         async with self._connect() as db:

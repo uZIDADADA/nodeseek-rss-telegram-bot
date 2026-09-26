@@ -4,7 +4,7 @@ Monitor NodeSeek keywords and push matched new posts to Telegram. Supports singl
 
 ## Features
 
-- Per-keyword add / enable / disable / delete
+- Add and delete keywords without a count limit
 - Keyword combinations, for example `dmit + corona` only matches when all terms appear
 - Block keywords, so matched blocked terms suppress notifications
 - Multi-select category filtering
@@ -20,8 +20,6 @@ Common commands:
 - `/keywords`: show your keywords
 - `/keywords <kw1,kw2>`: add one or more keywords
 - `/combo <kw1,kw2>`: add a keyword combination that requires all terms
-- `/on <keyword_id>`: enable a keyword
-- `/off <keyword_id>`: disable a keyword
 - `/delkw <keyword_id>`: delete a keyword
 - `/block <kw1,kw2>`: add block keywords
 - `/blocks`: show block keywords
@@ -42,6 +40,7 @@ Notes:
 - For channels, use `/addtarget <chat_id>` in private chat
 - The operator must be an admin of the target group or channel
 - Set `ALLOWED_USER_IDS` to one numeric Telegram user ID; only that user can control the bot, and the bot refuses to start if it is unset
+- Keywords disabled with the old `/off` command stay disabled after upgrading; to monitor one again, find its ID with `/keywords`, delete it with `/delkw <keyword_id>`, then add it again
 
 ## Original Project's Public Demo Bot
 

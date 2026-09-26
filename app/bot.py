@@ -30,8 +30,6 @@ HELP_TEXT = """
 /keywords <关键词1,关键词2> - 一次添加一个或多个关键词
 /addkw <关键词> - 添加单个关键词
 /combo <关键词1,关键词2> - 添加组合规则，所有词都命中才提醒
-/on <关键词ID> - 开启一个关键词
-/off <关键词ID> - 关闭一个关键词
 /delkw <关键词ID> - 删除一个关键词
 /block <屏蔽词1,屏蔽词2> - 添加屏蔽词，命中后不推送
 /blocks - 查看我的屏蔽词
@@ -103,6 +101,18 @@ def _chat_display_name(chat_title: str | None, chat_type: str | None, chat_id: i
     if chat_type == "private":
         return f"私聊 {chat_id}"
     return str(chat_id)
+
+
+async def _reply_chunked(message, text: str) -> None:
+    max_chars = 1800
+    while len(text) > max_chars:
+        split_at = text.rfind("\n", 0, max_chars)
+        if split_at <= 0:
+            split_at = max_chars
+        await message.reply_text(text[:split_at])
+        text = text[split_at:].lstrip("\n")
+    if text:
+        await message.reply_text(text)
 
 
 @dataclass(slots=True)
@@ -303,12 +313,12 @@ class BotHandlers:
 
         lines = ["我的关键词："]
         for index, keyword in enumerate(keywords, start=1):
-            status = "开启" if keyword.enabled else "关闭"
+            status = "" if keyword.enabled else "，旧版已停用；可删除后重新添加"
             kind = _keyword_kind(keyword.required_keywords)
             lines.append(
-                f"{index}. {keyword.keyword}（ID: {keyword.id}，{kind}）[{status}] 命中 {keyword.hit_count} 次"
+                f"{index}. {keyword.keyword}（ID: {keyword.id}，{kind}{status}）命中 {keyword.hit_count} 次"
             )
-        await update.effective_message.reply_text("\n".join(lines))
+        await _reply_chunked(update.effective_message, "\n".join(lines))
 
     async def _add_keywords_from_text(
         self,
@@ -323,19 +333,9 @@ class BotHandlers:
             await update.effective_message.reply_text("没有识别到有效关键词。")
             return
 
-        current_count = await self.db.count_keywords_by_tg_user(tg_user_id)
-        if current_count >= self.settings.max_keywords_per_user:
-            await update.effective_message.reply_text(
-                "你已经达到关键词数量上限。\n"
-                f"当前上限：{self.settings.max_keywords_per_user} 个"
-            )
-            return
-
         added: list[str] = []
         duplicates: list[str] = []
         for keyword in keywords:
-            if current_count >= self.settings.max_keywords_per_user:
-                break
             success, record = await self.db.add_keyword(tg_user_id, keyword)
             if not success or record is None:
                 duplicates.append(keyword)
@@ -343,14 +343,13 @@ class BotHandlers:
             if record.keyword.lower() != keyword.strip().lower():
                 duplicates.append(keyword)
                 continue
-            current_count += 1
             added.append(record.keyword)
 
         if added:
             text = "已添加关键词：\n" + "\n".join(f"- {item}" for item in added)
             if duplicates:
                 text += "\n\n以下关键词已存在，已跳过：\n" + "\n".join(f"- {item}" for item in duplicates)
-            await update.effective_message.reply_text(text)
+            await _reply_chunked(update.effective_message, text)
             return
 
         await update.effective_message.reply_text("这些关键词都已经存在了，无需重复添加。")
@@ -365,14 +364,6 @@ class BotHandlers:
         if len(terms) < 2:
             await update.effective_message.reply_text(
                 "请至少输入 2 个关键词。\n例如：/combo dmit,corona"
-            )
-            return
-
-        current_count = await self.db.count_keywords_by_tg_user(update.effective_user.id)
-        if current_count >= self.settings.max_keywords_per_user:
-            await update.effective_message.reply_text(
-                "你已经达到关键词数量上限。\n"
-                f"当前上限：{self.settings.max_keywords_per_user} 个"
             )
             return
 
@@ -452,37 +443,6 @@ class BotHandlers:
             return
         deleted = await self.db.delete_block_keyword(update.effective_user.id, int(payload))
         await update.effective_message.reply_text("已删除。" if deleted else "没有找到这个屏蔽词 ID。")
-
-    async def set_keyword_state(
-        self,
-        update: Update,
-        enabled: bool,
-    ) -> None:
-        if await self.ensure_user(update) is None:
-            return
-        if not update.effective_message or not update.effective_user:
-            return
-        payload = update.effective_message.text.partition(" ")[2].strip()
-        if not payload or not payload.isdigit():
-            command = "/on 1" if enabled else "/off 1"
-            await update.effective_message.reply_text(f"请用：{command}")
-            return
-
-        changed = await self.db.set_keyword_enabled(
-            update.effective_user.id,
-            int(payload),
-            enabled,
-        )
-        if not changed:
-            await update.effective_message.reply_text("没有找到这个关键词 ID。")
-            return
-        await update.effective_message.reply_text("已开启。" if enabled else "已关闭。")
-
-    async def on(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self.set_keyword_state(update, True)
-
-    async def off(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self.set_keyword_state(update, False)
 
     async def delkw(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if await self.ensure_user(update) is None:
@@ -720,7 +680,7 @@ class BotHandlers:
         lines = [
             "当前配置：",
             f"状态：{'启用' if settings and settings.enabled else '暂停'}",
-            f"关键词规则：{len(keywords)} 条（启用 {active_keywords} 条，组合 {combo_count} 条）",
+            f"关键词规则：{len(keywords)} 条（监控 {active_keywords} 条，组合 {combo_count} 条）",
             f"屏蔽词：{len(block_keywords)} 个",
             f"版块：{category_text}",
             f"推送目标：{len(targets)} 个",
@@ -786,8 +746,6 @@ def build_application(settings: Settings, db: Database) -> Application:
     application.add_handler(CommandHandler("keywords", handlers.keywords))
     application.add_handler(CommandHandler("addkw", handlers.addkw))
     application.add_handler(CommandHandler("combo", handlers.combo))
-    application.add_handler(CommandHandler("on", handlers.on))
-    application.add_handler(CommandHandler("off", handlers.off))
     application.add_handler(CommandHandler("delkw", handlers.delkw))
     application.add_handler(CommandHandler("block", handlers.block))
     application.add_handler(CommandHandler("blocks", handlers.blocks))

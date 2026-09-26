@@ -67,8 +67,7 @@ class FeedPoller:
         await asyncio.gather(*(handle_with_limit(user_record) for user_record in users))
 
     async def _handle_user(self, bot: Bot, user_record: PollingUserRecord, entries) -> None:
-        enabled_keywords = [item for item in user_record.keywords if item.enabled]
-        if not enabled_keywords:
+        if not user_record.keywords:
             return
         block_keywords = [item.keyword for item in user_record.block_keywords]
 
@@ -118,7 +117,7 @@ class FeedPoller:
                 )
                 continue
 
-            matched_rules = match_keyword_rules(entry.source_text, enabled_keywords)
+            matched_rules = match_keyword_rules(entry.source_text, user_record.keywords)
             if not matched_rules:
                 continue
             matched_keywords = [rule.keyword for rule in matched_rules]
