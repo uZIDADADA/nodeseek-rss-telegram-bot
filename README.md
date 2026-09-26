@@ -64,64 +64,47 @@ apt install -y docker.io docker-compose-plugin git
 
 ### 3. 下载项目
 
-在 VPS 上执行：
+在 VPS 上克隆自己的 Fork，指定 `dev` 分支，随后复制并编辑配置文件：
 
 ```bash
-git clone https://github.com/<你的用户名>/nodeseek-rss-telegram-bot.git
+git clone -b dev --single-branch https://github.com/uZIDADADA/nodeseek-rss-telegram-bot.git
 cd nodeseek-rss-telegram-bot
-```
-
-### 4. 配置环境变量
-
-复制配置模板：
-
-```bash
 cp .env.example .env
 nano .env
 ```
 
-把 `.env` 里的 `BOT_TOKEN` 改成你自己的 Token，并填写你自己的 Telegram 数字用户 ID。可以在 Telegram 中向 `@userinfobot` 发送消息查看用户 ID；这里不要填群组或频道的 chat ID。
+### 4. 配置环境变量
 
-`ALLOWED_USER_IDS` 必须且只能填写一个用户 ID：
+在 `.env` 中至少填写这两项：
 
 ```text
-ALLOWED_USER_IDS=<你的 Telegram 数字用户 ID>
+BOT_TOKEN=从BotFather获取的Token
+ALLOWED_USER_IDS=你的Telegram数字用户ID
 ```
 
-### 5. 启动 Bot
+`BOT_TOKEN` 来自你自己在 Telegram 的 `@BotFather` 创建的 Bot。`ALLOWED_USER_IDS` 必须且只能填写**你个人的数字用户 ID**；可以向 `@userinfobot` 发消息查看。这里不要填 Bot ID，也不要填群组或频道的 chat ID；无需把 Token 或用户 ID 发给别人。
+
+### 5. 启动并检查 Bot
 
 ```bash
 docker compose up -d --build
-```
-
-### 6. 查看运行日志
-
-```bash
 docker compose logs -f
 ```
 
-看到 `Application started` 就说明启动成功了。
+看到 `Application started` 表示 Bot 已启动。按 `Ctrl + C` 退出日志查看不会停止 Bot。然后私聊你自己创建的 Bot，发送 `/start`；私聊会自动成为推送目标，无需手动填写私聊 chat ID。
 
-按 `Ctrl + C` 可以退出日志查看，不会停止 Bot。
+VPS 不需要开放入站端口。它通过长轮询主动连接 Telegram，同时主动获取 NodeSeek RSS；请确保出站网络能访问 `api.telegram.org`、`rss.nodeseek.com`，且构建镜像时能访问 Docker 镜像源和 PyPI。
 
-### 7. 更新项目
+### 6. 更新 dev 分支
 
-如果只是普通更新，可以执行：
+在项目目录中执行：
 
 ```bash
-git pull
-docker compose down
+git pull --ff-only origin dev
 docker compose up -d --build
 ```
 
-如果 VPS 提示 Git 分支冲突，可以改用强制对齐 GitHub：
-
-```bash
-git fetch origin
-git reset --hard origin/main
-docker compose down
-docker compose up -d --build
-```
+如果 Git 提示分支已分叉，请先处理 VPS 上的本地改动，不要强制重置分支。
 
 ## 隐私说明
 

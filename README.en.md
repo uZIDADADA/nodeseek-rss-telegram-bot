@@ -66,7 +66,7 @@ Open Telegram, talk to `@BotFather`, create a new bot, and keep the `BOT_TOKEN` 
 Run this on your VPS:
 
 ```bash
-git clone https://github.com/<your-username>/nodeseek-rss-telegram-bot.git
+git clone -b dev --single-branch https://github.com/uZIDADADA/nodeseek-rss-telegram-bot.git
 cd nodeseek-rss-telegram-bot
 ```
 
@@ -108,19 +108,11 @@ Press `Ctrl + C` to exit log viewing. This will not stop the bot.
 For normal updates, run:
 
 ```bash
-git pull
-docker compose down
+git pull --ff-only origin dev
 docker compose up -d --build
 ```
 
-If your VPS reports a Git branch conflict, force it to match GitHub:
-
-```bash
-git fetch origin
-git reset --hard origin/main
-docker compose down
-docker compose up -d --build
-```
+If Git reports divergent branches, resolve local changes before pulling. Do not force-reset the branch.
 
 ## Privacy
 
