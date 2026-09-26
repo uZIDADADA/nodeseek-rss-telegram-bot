@@ -32,16 +32,19 @@ class MessageFormatter:
         self,
         *,
         title: str,
+        author: str,
         link: str,
         matched_keywords: list[str],
         category_name: str,
     ) -> str:
         highlighted_title = _highlight_title(title, matched_keywords)
         keywords_text = escape_html("  ".join(matched_keywords) if matched_keywords else "未命中")
+        author_text = escape_html(author or "未知")
         category_text = escape_html(category_name)
         link_text = escape_html(link)
         return (
             f'<a href="{link_text}"><b>{highlighted_title}</b></a>\n'
             f"⚡️⚡️⚡️ 关键词： {keywords_text}\n"
+            f"👤 作   者： {author_text}\n"
             f"🏷️🏷️🏷️ 板   块： <u>{category_text}</u>"
         ).strip()

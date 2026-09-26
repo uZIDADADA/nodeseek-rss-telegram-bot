@@ -10,6 +10,7 @@ Monitor NodeSeek keywords and push matched new posts to Telegram. Supports singl
 - Multi-select category filtering
 - Multiple delivery targets, up to 10 in total across user chats and communities
 - Delivery history
+- Notifications include the post author
 - Deduplicated notifications with persisted state
 - Only the configured Telegram user can control the bot
 - Polls RSS every 10 seconds by default, configurable in `.env`

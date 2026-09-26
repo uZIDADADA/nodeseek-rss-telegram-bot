@@ -13,6 +13,7 @@ from app.utils import format_datetime, strip_html, truncate_text
 class FeedEntry:
     item_key: str
     title: str
+    author: str
     link: str
     summary: str
     published_at: str
@@ -46,6 +47,7 @@ class FeedClient:
         entries: list[FeedEntry] = []
         for item in parsed.entries[: self.max_entries_per_feed]:
             title = strip_html(item.get("title")) or "无标题"
+            author = strip_html(item.get("author")) or "未知"
             link = item.get("link", "").strip()
             summary = item.get("summary") or item.get("description") or ""
             plain_summary = truncate_text(strip_html(summary), 280)
@@ -82,6 +84,7 @@ class FeedClient:
                 FeedEntry(
                     item_key=item_key,
                     title=title,
+                    author=author,
                     link=link,
                     summary=plain_summary,
                     published_at=format_datetime(published_raw),

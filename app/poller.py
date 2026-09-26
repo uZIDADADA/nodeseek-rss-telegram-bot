@@ -126,6 +126,7 @@ class FeedPoller:
 
             message = self.formatter.render(
                 title=entry.title,
+                author=entry.author,
                 link=entry.link,
                 matched_keywords=matched_keywords,
                 category_name=entry.category_name,
