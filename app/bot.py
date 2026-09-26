@@ -19,7 +19,7 @@ from app.keyboard import build_category_keyboard, build_main_menu
 
 MAIN_MENU_TEXT = (
     "欢迎使用 NodeSeek 关键词监控 Bot。\n\n"
-    "你可以添加关键词、筛选版块、设置多个推送目标，并通过 /history 回看命中记录。"
+    "你可以添加关键词、筛选版块，并通过 /history 回看命中记录。提醒会发送到你的私聊。"
 )
 
 HELP_TEXT = """
@@ -30,22 +30,17 @@ HELP_TEXT = """
 /keywords <关键词1,关键词2> - 一次添加一个或多个关键词
 /addkw <关键词> - 添加单个关键词
 /combo <关键词1,关键词2> - 添加组合规则，所有词都命中才提醒
-/delkw <关键词ID> - 删除一个关键词
+/del <关键词ID> - 删除一个关键词
 /block <屏蔽词1,屏蔽词2> - 添加屏蔽词，命中后不推送
 /blocks - 查看我的屏蔽词
 /delblock <屏蔽词ID> - 删除一个屏蔽词
 /scope - 通过按钮选择监控版块（支持多选）
 /scope all - 监控全部版块
 /scope <slug1,slug2> - 用 slug 设置版块，例如：/scope trade,inner
-/targets - 查看当前推送目标
-/addtarget - 将当前聊天加入推送目标；私聊里也可用 /addtarget <chat_id> 绑定群组或频道
-/target <chat_id> - 已停用，请改用 /addtarget
-/deltarget <目标ID> - 删除一个推送目标
 /history - 查看最近命中的帖子
 /status - 查看当前配置
 /pause - 暂停提醒
 /resume - 恢复提醒
-/chatid - 查看当前聊天 ID
 
 版块 slug：
 daily, tech, info, review, trade, carpool, promo, life, dev, photo-share, expose, inner, sandbox
@@ -53,9 +48,8 @@ daily, tech, info, review, trade, carpool, promo, life, dev, photo-share, expose
 说明：
 1. 普通关键词命中任意一个就提醒，组合规则需要所有词同时命中。
 2. 默认第一次使用会跳过旧帖，只从后续新帖开始通知。
-3. 首次私聊会自动加入私聊推送目标；群组和频道需由管理员执行 /addtarget。
-4. 每个用户最多可配置多个推送目标，默认上限是 10 个。
-5. 只有服务端配置的唯一用户才能操作 Bot。
+3. 首次私聊会自动启用私聊推送；不会向群组或频道发送提醒。
+4. 只有服务端配置的唯一用户才能操作 Bot。
 """.strip()
 
 
@@ -95,14 +89,6 @@ def _keyword_kind(required_keywords: str) -> str:
     return "组合" if len(terms) > 1 else "关键词"
 
 
-def _chat_display_name(chat_title: str | None, chat_type: str | None, chat_id: int) -> str:
-    if chat_title:
-        return chat_title
-    if chat_type == "private":
-        return f"私聊 {chat_id}"
-    return str(chat_id)
-
-
 async def _reply_chunked(message, text: str) -> None:
     max_chars = 1800
     while len(text) > max_chars:
@@ -120,138 +106,25 @@ class BotHandlers:
     settings: Settings
     db: Database
 
-    async def _ensure_chat_admin(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-    ) -> bool:
-        if not update.effective_chat or not update.effective_user or not update.effective_message:
-            return False
-        if update.effective_chat.type == "private":
-            return True
-
-        try:
-            member = await context.bot.get_chat_member(
-                chat_id=update.effective_chat.id,
-                user_id=update.effective_user.id,
-            )
-        except Exception:
-            await update.effective_message.reply_text("暂时无法校验你的管理员身份，请稍后再试。")
-            return False
-
-        if getattr(member, "status", "") in {"administrator", "creator", "owner"}:
-            return True
-
-        await update.effective_message.reply_text(
-            "当前聊天是群组或频道，只有管理员才能把这里加入推送目标。"
-        )
-        return False
-
-    async def _resolve_target_chat(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        requested_chat_id: int | None,
-    ) -> tuple[int, str | None, str] | None:
-        if not update.effective_message or not update.effective_chat:
-            return None
-
-        if requested_chat_id is None:
-            if not await self._ensure_chat_admin(update, context):
-                return None
-
-            chat = update.effective_chat
-            if chat.type == "private":
-                chat_title = update.effective_user.full_name if update.effective_user else "私聊"
-            else:
-                chat_title = chat.title
-            return chat.id, chat_title, chat.type
-
-        if not update.effective_user:
-            await update.effective_message.reply_text(
-                "私聊绑定频道或群组时，需要由你的个人账号来操作。"
-            )
-            return None
-
-        try:
-            target_chat = await context.bot.get_chat(requested_chat_id)
-        except Exception:
-            await update.effective_message.reply_text(
-                "无法访问这个目标 chat_id。\n"
-                "请确认 chat_id 正确，并且 Bot 已经加入对应的群组或频道。"
-            )
-            return None
-
-        try:
-            requester_member = await context.bot.get_chat_member(
-                chat_id=requested_chat_id,
-                user_id=update.effective_user.id,
-            )
-        except Exception:
-            await update.effective_message.reply_text(
-                "暂时无法校验你在目标群组或频道里的管理员身份。"
-            )
-            return None
-
-        if getattr(requester_member, "status", "") not in {"administrator", "creator", "owner"}:
-            await update.effective_message.reply_text(
-                "你不是这个群组或频道的管理员，不能把它加入推送目标。"
-            )
-            return None
-
-        try:
-            me = await context.bot.get_me()
-            bot_member = await context.bot.get_chat_member(
-                chat_id=requested_chat_id,
-                user_id=me.id,
-            )
-        except Exception:
-            await update.effective_message.reply_text(
-                "Bot 还没有加入这个群组或频道，或当前权限不足。"
-            )
-            return None
-
-        bot_status = getattr(bot_member, "status", "")
-        if target_chat.type == "channel":
-            allowed_statuses = {"administrator", "creator", "owner"}
-            if bot_status not in allowed_statuses:
-                await update.effective_message.reply_text(
-                    "频道场景下，请先把 Bot 加为频道管理员，然后再执行：\n"
-                    f"/addtarget {requested_chat_id}"
-                )
-                return None
-        else:
-            allowed_statuses = {"administrator", "creator", "owner", "member"}
-            if bot_status not in allowed_statuses:
-                await update.effective_message.reply_text(
-                    "Bot 还没有加入这个群组，或当前权限不足。"
-                )
-                return None
-
-        chat_title = getattr(target_chat, "title", None) or getattr(target_chat, "full_name", None)
-        return requested_chat_id, chat_title, target_chat.type
-
     async def ensure_user(self, update: Update) -> UserRecord | None:
         if not update.effective_user or not update.effective_chat:
-            raise RuntimeError("当前更新没有用户信息")
+            return None
         if update.effective_user.id not in self.settings.allowed_user_ids:
             if update.effective_message:
                 await update.effective_message.reply_text("这个 Bot 当前未开放给你使用。")
             return None
 
         chat = update.effective_chat
-        if chat.type == "private":
-            chat_title = update.effective_user.full_name
-        else:
-            chat_title = chat.title
+        if chat.type != "private":
+            if update.effective_message:
+                await update.effective_message.reply_text("请在私聊中使用这个 Bot。")
+            return None
 
         return await self.db.ensure_user_profile(
             tg_user_id=update.effective_user.id,
             chat_id=chat.id,
             username=update.effective_user.username,
             first_name=update.effective_user.first_name,
-            chat_title=chat_title,
-            chat_type=chat.type,
         )
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -267,11 +140,6 @@ class BotHandlers:
         if await self.ensure_user(update) is None:
             return
         await update.effective_message.reply_text(HELP_TEXT, reply_markup=build_main_menu())
-
-    async def chatid(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if await self.ensure_user(update) is None:
-            return
-        await update.effective_message.reply_text(f"当前聊天 ID：{update.effective_chat.id}")
 
     async def addkw(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if await self.ensure_user(update) is None:
@@ -313,10 +181,9 @@ class BotHandlers:
 
         lines = ["我的关键词："]
         for index, keyword in enumerate(keywords, start=1):
-            status = "" if keyword.enabled else "，旧版已停用；可删除后重新添加"
             kind = _keyword_kind(keyword.required_keywords)
             lines.append(
-                f"{index}. {keyword.keyword}（ID: {keyword.id}，{kind}{status}）命中 {keyword.hit_count} 次"
+                f"{index}. {keyword.keyword}（ID: {keyword.id}，{kind}）命中 {keyword.hit_count} 次"
             )
         await _reply_chunked(update.effective_message, "\n".join(lines))
 
@@ -444,14 +311,14 @@ class BotHandlers:
         deleted = await self.db.delete_block_keyword(update.effective_user.id, int(payload))
         await update.effective_message.reply_text("已删除。" if deleted else "没有找到这个屏蔽词 ID。")
 
-    async def delkw(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def delete_keyword(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if await self.ensure_user(update) is None:
             return
         if not update.effective_message or not update.effective_user:
             return
         payload = update.effective_message.text.partition(" ")[2].strip()
         if not payload or not payload.isdigit():
-            await update.effective_message.reply_text("请用：/delkw <关键词ID>\n例如：/delkw 1")
+            await update.effective_message.reply_text("请用：/del <关键词ID>\n例如：/del 1")
             return
         deleted = await self.db.delete_keyword(update.effective_user.id, int(payload))
         await update.effective_message.reply_text("已删除。" if deleted else "没有找到这个关键词 ID。")
@@ -547,88 +414,6 @@ class BotHandlers:
 
         await query.edit_message_reply_markup(reply_markup=build_category_keyboard(selected))
 
-    async def targets(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if await self.ensure_user(update) is None:
-            return
-        if not update.effective_message or not update.effective_user:
-            return
-        targets = await self.db.list_targets_by_tg_user(update.effective_user.id)
-        if not targets:
-            await update.effective_message.reply_text("你还没有推送目标，可以先在当前聊天发送 /addtarget")
-            return
-        lines = ["当前推送目标："]
-        for target in targets:
-            lines.append(
-                f"{target.id}. {_chat_display_name(target.chat_title, target.chat_type, target.chat_id)} ({target.chat_id})"
-            )
-        await update.effective_message.reply_text("\n".join(lines))
-
-    async def addtarget(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        user = await self.ensure_user(update)
-        if user is None or not update.effective_message or not update.effective_chat:
-            return
-        payload = update.effective_message.text.partition(" ")[2].strip()
-        requested_chat_id: int | None = None
-        if payload:
-            if not payload.lstrip("-").isdigit():
-                await update.effective_message.reply_text(
-                    "请用：/addtarget 或 /addtarget <chat_id>"
-                )
-                return
-            requested_chat_id = int(payload)
-
-        target_chat = await self._resolve_target_chat(update, context, requested_chat_id)
-        if target_chat is None:
-            return
-
-        target_chat_id, chat_title, chat_type = target_chat
-
-        existing_targets = await self.db.list_targets_by_tg_user(user.tg_user_id)
-        if any(item.chat_id == target_chat_id for item in existing_targets):
-            await update.effective_message.reply_text("这个目标已经在推送目标列表里了。")
-            return
-
-        current_count = await self.db.count_targets_by_tg_user(user.tg_user_id)
-        if current_count >= self.settings.max_targets_per_user:
-            await update.effective_message.reply_text(
-                "你已经达到推送目标上限。\n"
-                f"当前上限：{self.settings.max_targets_per_user} 个"
-            )
-            return
-
-        created = await self.db.add_target_by_tg_user(
-            user.tg_user_id,
-            target_chat_id,
-            chat_title=chat_title,
-            chat_type=chat_type,
-        )
-        if not created:
-            await update.effective_message.reply_text("这个目标已经在推送目标列表里了。")
-            return
-        await update.effective_message.reply_text(
-            f"已添加推送目标：{_chat_display_name(chat_title, chat_type, target_chat_id)}"
-        )
-
-    async def target(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if await self.ensure_user(update) is None or not update.effective_message:
-            return
-        await update.effective_message.reply_text(
-            "请改用：/addtarget 或 /addtarget <chat_id>\n"
-            "例如私聊绑定频道：/addtarget -1001234567890"
-        )
-
-    async def deltarget(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if await self.ensure_user(update) is None:
-            return
-        if not update.effective_message or not update.effective_user:
-            return
-        payload = update.effective_message.text.partition(" ")[2].strip()
-        if not payload or not payload.isdigit():
-            await update.effective_message.reply_text("请用：/deltarget <目标ID>")
-            return
-        deleted = await self.db.delete_target(update.effective_user.id, int(payload))
-        await update.effective_message.reply_text("已删除。" if deleted else "没有找到这个目标 ID。")
-
     async def history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if await self.ensure_user(update) is None:
             return
@@ -666,9 +451,7 @@ class BotHandlers:
         settings = await self.db.get_user_settings_by_tg_user(update.effective_user.id)
         keywords = await self.db.list_keywords_by_tg_user(update.effective_user.id)
         block_keywords = await self.db.list_block_keywords_by_tg_user(update.effective_user.id)
-        targets = await self.db.list_targets_by_tg_user(update.effective_user.id)
 
-        active_keywords = sum(1 for item in keywords if item.enabled)
         combo_count = sum(
             1 for item in keywords if _keyword_kind(item.required_keywords) == "组合"
         )
@@ -680,10 +463,9 @@ class BotHandlers:
         lines = [
             "当前配置：",
             f"状态：{'启用' if settings and settings.enabled else '暂停'}",
-            f"关键词规则：{len(keywords)} 条（监控 {active_keywords} 条，组合 {combo_count} 条）",
+            f"关键词规则：{len(keywords)} 条（组合 {combo_count} 条）",
             f"屏蔽词：{len(block_keywords)} 个",
             f"版块：{category_text}",
-            f"推送目标：{len(targets)} 个",
         ]
         await update.effective_message.reply_text("\n".join(lines))
 
@@ -742,19 +524,14 @@ def build_application(settings: Settings, db: Database) -> Application:
     application = Application.builder().token(settings.bot_token).build()
     application.add_handler(CommandHandler("start", handlers.start))
     application.add_handler(CommandHandler("help", handlers.help))
-    application.add_handler(CommandHandler("chatid", handlers.chatid))
     application.add_handler(CommandHandler("keywords", handlers.keywords))
     application.add_handler(CommandHandler("addkw", handlers.addkw))
     application.add_handler(CommandHandler("combo", handlers.combo))
-    application.add_handler(CommandHandler("delkw", handlers.delkw))
+    application.add_handler(CommandHandler("del", handlers.delete_keyword))
     application.add_handler(CommandHandler("block", handlers.block))
     application.add_handler(CommandHandler("blocks", handlers.blocks))
     application.add_handler(CommandHandler("delblock", handlers.delblock))
     application.add_handler(CommandHandler("scope", handlers.scope))
-    application.add_handler(CommandHandler("targets", handlers.targets))
-    application.add_handler(CommandHandler("addtarget", handlers.addtarget))
-    application.add_handler(CommandHandler("target", handlers.target))
-    application.add_handler(CommandHandler("deltarget", handlers.deltarget))
     application.add_handler(CommandHandler("history", handlers.history))
     application.add_handler(CommandHandler("status", handlers.status))
     application.add_handler(CommandHandler("pause", handlers.pause))

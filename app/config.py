@@ -30,7 +30,6 @@ class Settings:
     bot_token: str
     database_path: Path
     rss_url: str
-    max_targets_per_user: int
     history_limit: int
     poll_interval_seconds: int
     http_timeout_seconds: int
@@ -64,7 +63,6 @@ class Settings:
             bot_token=bot_token,
             database_path=database_path,
             rss_url=os.getenv("RSS_URL", "https://rss.nodeseek.com/").strip(),
-            max_targets_per_user=int(os.getenv("MAX_TARGETS_PER_USER", "10")),
             history_limit=int(os.getenv("HISTORY_LIMIT", "10")),
             poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", "10")),
             http_timeout_seconds=int(os.getenv("HTTP_TIMEOUT_SECONDS", "20")),

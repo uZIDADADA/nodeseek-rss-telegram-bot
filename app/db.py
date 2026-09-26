@@ -6,7 +6,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from app.utils import normalize_keywords, utc_now_iso
+from app.utils import utc_now_iso
 
 
 @dataclass(slots=True)
@@ -33,7 +33,6 @@ class KeywordRecord:
     keyword: str
     normalized_keyword: str
     required_keywords: str
-    enabled: bool
     hit_count: int
     last_hit_at: str | None
 
@@ -46,16 +45,6 @@ class BlockKeywordRecord:
     normalized_keyword: str
     hit_count: int
     last_hit_at: str | None
-
-
-@dataclass(slots=True)
-class TargetRecord:
-    id: int
-    user_id: int
-    chat_id: int
-    chat_title: str | None
-    chat_type: str | None
-    enabled: bool
 
 
 @dataclass(slots=True)
@@ -76,7 +65,6 @@ class PollingUserRecord:
     settings: UserSettingsRecord
     keywords: list[KeywordRecord]
     block_keywords: list[BlockKeywordRecord]
-    targets: list[TargetRecord]
 
 
 class Database:
@@ -122,7 +110,6 @@ class Database:
                     keyword TEXT NOT NULL,
                     normalized_keyword TEXT NOT NULL,
                     required_keywords TEXT NOT NULL DEFAULT '',
-                    enabled INTEGER NOT NULL DEFAULT 1,
                     hit_count INTEGER NOT NULL DEFAULT 0,
                     last_hit_at TEXT,
                     created_at TEXT NOT NULL,
@@ -144,19 +131,6 @@ class Database:
                     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
 
-                CREATE TABLE IF NOT EXISTS targets (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    chat_id INTEGER NOT NULL,
-                    chat_title TEXT,
-                    chat_type TEXT,
-                    enabled INTEGER NOT NULL DEFAULT 1,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(user_id, chat_id),
-                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-                );
-
                 CREATE TABLE IF NOT EXISTS delivery_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -171,156 +145,12 @@ class Database:
                     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
 
-                CREATE TABLE IF NOT EXISTS schema_meta (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                );
-
                 CREATE INDEX IF NOT EXISTS idx_keywords_user_id ON keywords(user_id);
                 CREATE INDEX IF NOT EXISTS idx_block_keywords_user_id ON block_keywords(user_id);
-                CREATE INDEX IF NOT EXISTS idx_targets_user_id ON targets(user_id);
                 CREATE INDEX IF NOT EXISTS idx_delivery_history_user_id ON delivery_history(user_id);
                 """
             )
-            await self._ensure_current_schema(db)
-            await self._migrate_legacy_schema(db)
             await db.commit()
-
-    async def _ensure_current_schema(self, db: aiosqlite.Connection) -> None:
-        cursor = await db.execute("PRAGMA table_info(keywords)")
-        columns = {row[1] for row in await cursor.fetchall()}
-        if "required_keywords" not in columns:
-            await db.execute(
-                "ALTER TABLE keywords ADD COLUMN required_keywords TEXT NOT NULL DEFAULT ''"
-            )
-        cursor = await db.execute("PRAGMA table_info(delivery_history)")
-        delivery_columns = {row[1] for row in await cursor.fetchall()}
-        if "delivery_status" not in delivery_columns:
-            await db.execute(
-                "ALTER TABLE delivery_history ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'sent'"
-            )
-
-    async def _migrate_legacy_schema(self, db: aiosqlite.Connection) -> None:
-        cursor = await db.execute(
-            "SELECT value FROM schema_meta WHERE key = 'legacy_subscriptions_migrated'"
-        )
-        row = await cursor.fetchone()
-        if row is not None:
-            return
-
-        cursor = await db.execute(
-            """
-            SELECT name
-            FROM sqlite_master
-            WHERE type = 'table' AND name = 'subscriptions'
-            """
-        )
-        if await cursor.fetchone() is None:
-            await db.execute(
-                """
-                INSERT OR REPLACE INTO schema_meta (key, value)
-                VALUES ('legacy_subscriptions_migrated', '1')
-                """
-            )
-            return
-
-        cursor = await db.execute(
-            """
-            SELECT id, user_id, keywords, target_chat_id, enabled, initialized, created_at
-            FROM subscriptions
-            ORDER BY id ASC
-            """
-        )
-        subscriptions = await cursor.fetchall()
-        if not subscriptions:
-            await db.execute(
-                """
-                INSERT OR REPLACE INTO schema_meta (key, value)
-                VALUES ('legacy_subscriptions_migrated', '1')
-                """
-            )
-            return
-
-        user_agg: dict[int, dict[str, object]] = {}
-        for _, user_id, keywords, target_chat_id, enabled, initialized, created_at in subscriptions:
-            aggregate = user_agg.setdefault(
-                user_id,
-                {
-                    "targets": set(),
-                    "keywords": set(),
-                    "enabled": False,
-                    "initialized": False,
-                    "created_at": created_at,
-                },
-            )
-            aggregate["targets"].add(target_chat_id)
-            aggregate["enabled"] = bool(aggregate["enabled"]) or bool(enabled)
-            aggregate["initialized"] = bool(aggregate["initialized"]) or bool(initialized)
-            for keyword in normalize_keywords(keywords):
-                aggregate["keywords"].add(keyword)
-
-        for user_id, aggregate in user_agg.items():
-            created_at = str(aggregate["created_at"])
-            await db.execute(
-                """
-                INSERT OR IGNORE INTO user_settings (
-                    user_id, category_slugs, enabled, initialized, created_at, updated_at
-                )
-                VALUES (?, '', ?, ?, ?, ?)
-                """,
-                (
-                    user_id,
-                    1 if aggregate["enabled"] else 0,
-                    1 if aggregate["initialized"] else 0,
-                    created_at,
-                    created_at,
-                ),
-            )
-            for chat_id in aggregate["targets"]:
-                await db.execute(
-                    """
-                    INSERT OR IGNORE INTO targets (
-                        user_id, chat_id, chat_title, chat_type, enabled, created_at, updated_at
-                    )
-                    VALUES (?, ?, NULL, NULL, 1, ?, ?)
-                    """,
-                    (user_id, int(chat_id), created_at, created_at),
-                )
-            for keyword in aggregate["keywords"]:
-                await db.execute(
-                    """
-                    INSERT OR IGNORE INTO keywords (
-                        user_id, keyword, normalized_keyword, enabled, hit_count, last_hit_at, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, 1, 0, NULL, ?, ?)
-                    """,
-                    (user_id, keyword, keyword.lower(), created_at, created_at),
-                )
-
-        cursor = await db.execute(
-            """
-            SELECT s.user_id, d.item_key, d.delivered_at
-            FROM deliveries d
-            JOIN subscriptions s ON s.id = d.subscription_id
-            """
-        )
-        for user_id, item_key, delivered_at in await cursor.fetchall():
-            await db.execute(
-                """
-                INSERT OR IGNORE INTO delivery_history (
-                    user_id, item_key, title, link, category_slug, matched_keywords, delivered_at
-                )
-                VALUES (?, ?, '', '', NULL, '', ?)
-                """,
-                (user_id, item_key, delivered_at),
-            )
-
-        await db.execute(
-            """
-            INSERT OR REPLACE INTO schema_meta (key, value)
-            VALUES ('legacy_subscriptions_migrated', '1')
-            """
-        )
 
     async def upsert_user(
         self,
@@ -361,18 +191,9 @@ class Database:
         chat_id: int,
         username: str | None,
         first_name: str | None,
-        chat_title: str | None,
-        chat_type: str | None,
     ) -> UserRecord:
         user = await self.upsert_user(tg_user_id, chat_id, username, first_name)
         await self.ensure_user_settings(user.id)
-        if chat_type == "private" and await self.count_targets_by_user_id(user.id) == 0:
-            await self.add_target(
-                user.id,
-                chat_id,
-                chat_title=chat_title,
-                chat_type=chat_type,
-            )
         return user
 
     async def ensure_user_settings(self, user_id: int) -> None:
@@ -484,9 +305,9 @@ class Database:
                 """
                 INSERT OR IGNORE INTO keywords (
                     user_id, keyword, normalized_keyword, required_keywords,
-                    enabled, hit_count, last_hit_at, created_at, updated_at
+                    hit_count, last_hit_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, 1, 0, NULL, ?, ?)
+                VALUES (?, ?, ?, ?, 0, NULL, ?, ?)
                 """,
                 (user_id, keyword.strip(), normalized, required_keywords, now, now),
             )
@@ -495,7 +316,7 @@ class Database:
             cursor = await db.execute(
                 """
                 SELECT id, user_id, keyword, normalized_keyword, required_keywords,
-                       enabled, hit_count, last_hit_at
+                       hit_count, last_hit_at
                 FROM keywords
                 WHERE user_id = ? AND normalized_keyword = ?
                 """,
@@ -509,7 +330,7 @@ class Database:
             cursor = await db.execute(
                 """
                 SELECT k.id, k.user_id, k.keyword, k.normalized_keyword,
-                       k.required_keywords, k.enabled, k.hit_count, k.last_hit_at
+                       k.required_keywords, k.hit_count, k.last_hit_at
                 FROM keywords k
                 JOIN users u ON u.id = k.user_id
                 WHERE u.tg_user_id = ?
@@ -637,116 +458,6 @@ class Database:
                 )
             await db.commit()
 
-    async def count_targets_by_user_id(self, user_id: int) -> int:
-        async with self._connect() as db:
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM targets WHERE user_id = ?",
-                (user_id,),
-            )
-            row = await cursor.fetchone()
-        return int(row[0]) if row else 0
-
-    async def count_targets_by_tg_user(self, tg_user_id: int) -> int:
-        async with self._connect() as db:
-            cursor = await db.execute(
-                """
-                SELECT COUNT(*)
-                FROM targets t
-                JOIN users u ON u.id = t.user_id
-                WHERE u.tg_user_id = ?
-                """,
-                (tg_user_id,),
-            )
-            row = await cursor.fetchone()
-        return int(row[0]) if row else 0
-
-    async def add_target(
-        self,
-        user_id: int,
-        chat_id: int,
-        *,
-        chat_title: str | None,
-        chat_type: str | None,
-    ) -> bool:
-        now = utc_now_iso()
-        async with self._connect() as db:
-            cursor = await db.execute(
-                """
-                INSERT OR IGNORE INTO targets (
-                    user_id, chat_id, chat_title, chat_type, enabled, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, 1, ?, ?)
-                """,
-                (user_id, chat_id, chat_title, chat_type, now, now),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
-
-    async def add_target_by_tg_user(
-        self,
-        tg_user_id: int,
-        chat_id: int,
-        *,
-        chat_title: str | None,
-        chat_type: str | None,
-    ) -> bool:
-        async with self._connect() as db:
-            cursor = await db.execute(
-                "SELECT id FROM users WHERE tg_user_id = ?",
-                (tg_user_id,),
-            )
-            row = await cursor.fetchone()
-            if row is None:
-                return False
-            user_id = int(row[0])
-        return await self.add_target(
-            user_id,
-            chat_id,
-            chat_title=chat_title,
-            chat_type=chat_type,
-        )
-
-    async def list_targets_by_tg_user(self, tg_user_id: int) -> list[TargetRecord]:
-        async with self._connect() as db:
-            cursor = await db.execute(
-                """
-                SELECT t.id, t.user_id, t.chat_id, t.chat_title, t.chat_type, t.enabled
-                FROM targets t
-                JOIN users u ON u.id = t.user_id
-                WHERE u.tg_user_id = ?
-                ORDER BY t.id ASC
-                """,
-                (tg_user_id,),
-            )
-            rows = await cursor.fetchall()
-        return [TargetRecord(*row) for row in rows]
-
-    async def delete_target(self, tg_user_id: int, target_id: int) -> bool:
-        async with self._connect() as db:
-            cursor = await db.execute(
-                """
-                DELETE FROM targets
-                WHERE id = ?
-                  AND user_id = (SELECT id FROM users WHERE tg_user_id = ?)
-                """,
-                (target_id, tg_user_id),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
-
-    async def set_target_enabled(self, user_id: int, target_id: int, enabled: bool) -> bool:
-        async with self._connect() as db:
-            cursor = await db.execute(
-                """
-                UPDATE targets
-                SET enabled = ?, updated_at = ?
-                WHERE id = ? AND user_id = ?
-                """,
-                (1 if enabled else 0, utc_now_iso(), target_id, user_id),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
-
     async def list_history_by_tg_user(self, tg_user_id: int, limit: int) -> list[DeliveryRecord]:
         async with self._connect() as db:
             cursor = await db.execute(
@@ -787,9 +498,9 @@ class Database:
                 cursor = await db.execute(
                     """
                     SELECT id, user_id, keyword, normalized_keyword, required_keywords,
-                           enabled, hit_count, last_hit_at
+                           hit_count, last_hit_at
                     FROM keywords
-                    WHERE user_id = ? AND enabled = 1
+                    WHERE user_id = ?
                     ORDER BY id ASC
                     """,
                     (user.id,),
@@ -810,26 +521,12 @@ class Database:
                 )
                 block_keyword_rows = await cursor.fetchall()
 
-                cursor = await db.execute(
-                    """
-                    SELECT id, user_id, chat_id, chat_title, chat_type, enabled
-                    FROM targets
-                    WHERE user_id = ? AND enabled = 1
-                    ORDER BY id ASC
-                    """,
-                    (user.id,),
-                )
-                target_rows = await cursor.fetchall()
-                if not target_rows:
-                    continue
-
                 results.append(
                     PollingUserRecord(
                         user=user,
                         settings=settings,
                         keywords=[KeywordRecord(*item) for item in keyword_rows],
                         block_keywords=[BlockKeywordRecord(*item) for item in block_keyword_rows],
-                        targets=[TargetRecord(*item) for item in target_rows],
                     )
                 )
 

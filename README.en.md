@@ -8,7 +8,7 @@ Monitor NodeSeek keywords and push matched new posts to Telegram. Supports singl
 - Keyword combinations, for example `dmit + corona` only matches when all terms appear
 - Block keywords, so matched blocked terms suppress notifications
 - Multi-select category filtering
-- Multiple delivery targets, up to 10 in total across user chats and communities
+- Notifications go only to your private chat with the bot; no target setup is needed
 - Delivery history
 - Notifications include the post author
 - Deduplicated notifications with persisted state
@@ -20,14 +20,10 @@ Common commands:
 - `/keywords`: show your keywords
 - `/keywords <kw1,kw2>`: add one or more keywords
 - `/combo <kw1,kw2>`: add a keyword combination that requires all terms
-- `/delkw <keyword_id>`: delete a keyword
+- `/del <keyword_id>`: delete a keyword
 - `/block <kw1,kw2>`: add block keywords
 - `/blocks`: show block keywords
 - `/delblock <block_keyword_id>`: delete a block keyword
-- `/addtarget`: add the current chat as a target
-- `/addtarget <chat_id>`: bind a group or channel from private chat
-- `/targets`: show delivery targets
-- `/deltarget <target_id>`: remove a target
 - `/history`: show recent matched posts
 - `/status`: show current settings
 - `/pause`: pause notifications
@@ -35,12 +31,9 @@ Common commands:
 
 Notes:
 
-- Private chats work by default, and you do not need to run `/addtarget` manually
-- In groups, you can run `/addtarget` directly
-- For channels, use `/addtarget <chat_id>` in private chat
-- The operator must be an admin of the target group or channel
+- Your first private message enables private notifications automatically; old group and channel targets stop receiving notifications after upgrading
 - Set `ALLOWED_USER_IDS` to one numeric Telegram user ID; only that user can control the bot, and the bot refuses to start if it is unset
-- Keywords disabled with the old `/off` command stay disabled after upgrading; to monitor one again, find its ID with `/keywords`, delete it with `/delkw <keyword_id>`, then add it again
+- Keywords previously disabled with `/off` become monitored after upgrading; remove any unwanted rule with `/del <keyword_id>`
 
 ## Original Project's Public Demo Bot
 
@@ -116,6 +109,6 @@ If Git reports divergent branches, resolve local changes before pulling. Do not 
 
 ## Privacy
 
-- This project stores Telegram user IDs, chat IDs, keywords, category settings, delivery targets, and delivery history only for notifications.
+- This project stores Telegram user IDs, chat IDs, keywords, category settings, and delivery history only for notifications.
 - Data is stored in the deployer's own SQLite database and is not uploaded to GitHub.
 - Do not expose `.env` or the `data/` directory. If your `BOT_TOKEN` leaks, reset it in BotFather immediately.

@@ -22,8 +22,6 @@ class KeywordManagementTests(unittest.IsolatedAsyncioTestCase):
                 chat_id=12345,
                 username="owner",
                 first_name="Owner",
-                chat_title="Owner",
-                chat_type="private",
             )
             handlers = BotHandlers(
                 settings=SimpleNamespace(allowed_user_ids=(12345,)),
@@ -50,6 +48,7 @@ class KeywordManagementTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(
                 all(len(call.args[0]) <= 1800 for call in message.reply_text.await_args_list)
             )
+
             message.text = "/combo alpha,beta"
             await handlers.combo(update, SimpleNamespace())
 
@@ -65,31 +64,15 @@ class KeywordManagementTests(unittest.IsolatedAsyncioTestCase):
                 all(len(call.args[0]) <= 1800 for call in message.reply_text.await_args_list)
             )
 
-    async def test_legacy_disabled_keyword_stays_unmonitored_until_readded(self) -> None:
+            message.text = f"/del {keywords[0].id}"
+            await handlers.delete_keyword(update, SimpleNamespace())
+            self.assertEqual(len(await db.list_keywords_by_tg_user(12345)), 51)
+
+    async def test_new_keyword_schema_has_no_toggle_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             db = Database(Path(directory) / "bot.db")
             await db.init()
-            await db.ensure_user_profile(
-                tg_user_id=12345,
-                chat_id=12345,
-                username="owner",
-                first_name="Owner",
-                chat_title="Owner",
-                chat_type="private",
-            )
-            _, paused = await db.add_keyword(12345, "paused")
-            await db.add_keyword(12345, "active")
             async with aiosqlite.connect(db.path) as connection:
-                await connection.execute(
-                    "UPDATE keywords SET enabled = 0 WHERE id = ?", (paused.id,)
-                )
-                await connection.commit()
-
-            await db.init()
-            users = await db.get_polling_users()
-            self.assertEqual([item.keyword for item in users[0].keywords], ["active"])
-
-            self.assertTrue(await db.delete_keyword(12345, paused.id))
-            self.assertTrue((await db.add_keyword(12345, "paused"))[0])
-            users = await db.get_polling_users()
-            self.assertEqual([item.keyword for item in users[0].keywords], ["active", "paused"])
+                cursor = await connection.execute("PRAGMA table_info(keywords)")
+                columns = {row[1] for row in await cursor.fetchall()}
+            self.assertNotIn("enabled", columns)

@@ -16,19 +16,6 @@ def strip_html(value: str | None) -> str:
     return SPACE_RE.sub(" ", plain).strip()
 
 
-def normalize_keywords(raw_keywords: str | None) -> list[str]:
-    if not raw_keywords:
-        return []
-    seen: set[str] = set()
-    result: list[str] = []
-    for keyword in raw_keywords.split(","):
-        cleaned = keyword.strip().lower()
-        if cleaned and cleaned not in seen:
-            seen.add(cleaned)
-            result.append(cleaned)
-    return result
-
-
 def format_datetime(value: str | None) -> str:
     if not value:
         return "未知"
